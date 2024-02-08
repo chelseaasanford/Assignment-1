@@ -1,0 +1,128 @@
+---
+title: "a1_task1_sanford_chelsea"
+author: "Chelsea Sanford"
+format:
+  html:
+    code-fold: true
+    toc: true
+    embed-resources: true
+execute:
+  echo: true
+  message: false
+  warning: false
+editor: visual
+---
+
+```{r}
+library(tidyverse)
+library(here)
+library(patchwork)
+library(cowplot)
+library(janitor)
+library(lubridate)
+
+library(sf)
+library(tmap)
+library(readxl)
+```
+
+# Task 1: Data Wrangling & Visualization: Sierra Amphibians
+
+![A mountain yellow-legged frog. Credit: Emmanuele Biggi](data/rmuscosa.jpeg)
+
+## Overview: 
+
+**Data summary:** Exploring amphibian abundance data recorded by the Sierra Lakes Inventory Project. 
+From the Environmental Data Initiative repository: “The Sierra Lakes Inventory Project (SLIP) was a research endeavor that ran from 1995-2002 and has supported research and management of Sierra Nevada aquatic ecosystems and their terrestrial interfaces. We described the physical characteristics of and surveyed aquatic communities for >8,000 lentic water bodies in the southern Sierra Nevada, including lakes, ponds, marshes, and meadows. In this document, I explore Mountain Yellow-Legged Frog abundance in the Sierra Lakes Region from 1995-2002 as well as determining which lakes had the 5 highest abundances of adult frogs.”
+
+**Data citation:** Knapp, R.A., C. Pavelka, E.E. Hegeman, and T.C. Smith. 2020. The Sierra Lakes Inventory Project: Non-Native fish and community composition of lakes and ponds in the Sierra Nevada, California ver 2. Environmental Data Initiative. https://doi.org/10.6073/pasta/d835832d7fd00d9e4466e44eea87fab3
+
+## Load in the Data
+
+```{r}
+amphibians_data <- read_excel(here('data', 'sierra_amphibians.xlsx'))
+```
+
+## Part 1: Mountain Yellow-Legged Frog Life Stages
+
+#### 1. Filter for *rana muscosa,* and use lubridate to edit date.
+
+```{r}
+mylf_data <- amphibians_data %>% 
+  select('survey_date', 'amphibian_species', 'amphibian_life_stage', 'amphibian_number') %>% 
+  clean_names() %>% 
+  filter(amphibian_species == 'RAMU', amphibian_life_stage != 'EggMass') %>% 
+  mutate(year = lubridate::year(survey_date))
+
+mylf_data$year <- factor(mylf_data$year)
+```
+
+#### 2. Group by year and lifestage.
+
+```{r}
+mylf_year <- mylf_data %>% 
+  group_by(year, amphibian_life_stage) %>% 
+  summarise(amphibian_number = sum(amphibian_number, na.rm = TRUE)) %>% 
+  ungroup()
+```
+
+#### 3. Bar Graph of Mountain Yellow-Legged Frog Counts from 1995-2002.
+
+```{r}
+mylf_plot <- ggplot(data = mylf_year, 
+                    aes(x = year, y = amphibian_number, fill = amphibian_life_stage)) +
+  geom_col() +
+  scale_fill_manual(values = c('aquamarine', 'darkcyan', 'darkslategrey')) +
+  labs(x = "Year", 
+       y = "Number of Amphibians") +
+  theme_minimal() +
+  theme(legend.title = element_blank(), axis.text.x = element_text(angle = 45, vjust = 0.5, hjust = 0.1))
+```
+
+## Part 2: Mountain Yellow-Legged Frog Adult and Sub-Adult Counts
+
+#### 1. Filter and group by lakes.
+
+```{r}
+mylf_adult <- amphibians_data %>% 
+  select('lake_id', 'survey_date', 
+         'amphibian_species', 'amphibian_life_stage', 'amphibian_number') %>%  
+  clean_names() %>% 
+  filter(amphibian_species == 'RAMU', amphibian_life_stage != 'EggMass', amphibian_life_stage != 'Tadpole') %>% 
+  mutate(year = lubridate::year(survey_date))
+
+mylf_adult$year <- factor(mylf_adult$year)
+```
+
+#### 2. Identify and isolate the lakes with highest frog count.
+
+```{r}
+mylf_count <- mylf_adult %>% 
+  group_by(lake_id) %>% 
+  summarize(amphibian_number = sum (amphibian_number, na.rm = TRUE)) %>% 
+  ungroup()
+
+mylf_5 <- mylf_count %>% 
+  top_n(5, wt = amphibian_number) %>% 
+  mutate(lake_id = paste('Lake', lake_id, sep = ' ')) %>% 
+  mutate(lake_id = fct_reorder(lake_id, amphibian_number))
+```
+
+#### 3. Plot the Mountain Yellow-Legged frog counts by lake.
+
+```{r fig.cap = ' '}
+mylf_lake_plot <- ggplot(data = mylf_5, aes(x = lake_id, y = amphibian_number)) +
+  geom_col(fill = "cyan3") +
+  labs(x = 'Lake', y = 'Number of Amphibians') +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust= 0.1))
+```
+
+## Create a combined plot.
+
+```{r fig.cap = 'Figure 1. The two bar graphs depict Mountain Yellow-Legged Frog abundance from 1995-2002. Panel A shows Mountain Yellow-Legged Frog count at three life stages (tadpole, subadult, and adult life stages) over the 7-year period. There is a distinct increase in abundance at all lifes stages, with a significant increase in 2002. Panel B depicts combined Mountain Yellow-Legged Frog abundance summed over the 7-year period. Shown above are the 5 lakes with the highest overall adult and subadult life stages. Counts range from 1500-2500.'}
+figure1 <- mylf_plot + mylf_lake_plot
+
+figure1 + plot_annotation(tag_levels = "A", title = 'Mountain Yellow-Legged Frog Counts in the Sierra Lakes')
+
+```

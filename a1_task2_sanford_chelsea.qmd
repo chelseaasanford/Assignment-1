@@ -1,0 +1,153 @@
+---
+title: "Assignment 1 Task 2"
+author: "Chelsea Sanford"
+format:
+  html:
+    code-fold: true
+    toc: true
+    embed-resources: true
+execute: 
+  echo: true
+  message: false
+  warning: false
+editor: visual
+---
+
+```{r}
+library(tidyverse)
+library(here)
+library(patchwork)
+library(cowplot)
+library(janitor)
+library(lubridate)
+
+library(tsibble)
+library(feasts)
+library(fable)
+```
+
+# TASK 2: Willamette Falls Fish Passage Time Series
+
+![The Steelhead Trout (Oncorhynchus mykiss) PHOTO CREDIT: © Tim Fitzharris / Minden Pictures / Corbis](data/steelhead.jpeg)
+
+## Overview:
+
+**Summary:** The DART Adult Passage Counts data shows the abundance of salmon species recorded from 1/1/2001 to 12/31/2010 at the Willamette Falls fish ladder on the Willamette River (Oregon). Here, I examine the abundance of Coho, Jack Coho, and Steelhead using a time series. The data shows seasonal trends by species, and overall abundance changes over the 10-year period.
+
+**Citation:** Columbia River Dart, (January 25, 2023). DART Adult Passage Counts Graphics & Text \[Data set\]. School of Aquatic and Fishery Sciences. https://www.cbr.washington.edu/dart/query/adult_graph_text
+
+
+## Part 1: Original Time Series
+
+#### 1. Load the data and isolate Coho, Jack Coho, and Steelhead.
+
+```{r}
+fish_data <- read.csv(here('data', 'willamette_fish_passage.csv')) %>% 
+  clean_names()
+
+fish_mod <- fish_data %>% 
+  select('project', 'date', 'coho', 'jack_coho', 'steelhead') %>% 
+  replace_na(replace = list(coho = 0, jack_coho = 0, steelhead = 0))
+```
+
+#### 2. Modify date
+
+```{r}
+fish_ts <- fish_mod %>% 
+  mutate(date = lubridate::mdy(date)) %>% 
+  as_tsibble(key = NULL, index = date)
+```
+
+#### 3. Pivot longer
+
+```{r}
+fish_ts_pivot_2008 <- fish_ts %>% 
+  pivot_longer(cols = c('coho', 'jack_coho', 'steelhead'), 
+               names_to = 'species', 
+               values_to = 'count')
+```
+
+#### 4. Create a plot to show trends between Coho, Jack Coho, and Steelhead.
+
+```{r fig.cap = 'Figure 1. The abundance of Coho, Jack Coho, and Steelhead in the Willamette fish passage is seasonal. There are distinct annual patterns that differ between the three species.'}
+fish_ts_plot <- ggplot(data = fish_ts_pivot_2008, aes(x = date, y = count, color = species)) +
+  geom_line() + 
+  scale_color_manual(values=c("goldenrod1", "chartreuse2", "darkblue"), labels = c("Coho", "Jack Coho", "Steelhead")) +
+  facet_wrap('species', ncol = 1) +
+  labs(x = 'Year', y = 'Count', title = 'Abundance of Coho, Jack Coho, and Steelhead', subtitle = 'Willamette Fish Passage from 2001-2010') +
+  theme_minimal() +
+  theme(legend.title = element_blank()) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust = 0.1))
+
+
+plot(fish_ts_plot)
+```
+
+-   Salmon abundance has remained relatively steady over the 10-year span, with a distinct increase in Coho counts in 2009 and 2010. Steelhead abundance has declined slightly.
+-   There are clear seasonal patterns in salmon abundance. Coho and Jack Coho enter the passage primarily in October, while steelhead are present from January to August.
+-   Steelhead have the highest abundance, followed by Coho and then Jack Coho.
+
+## Part 2: Seasonplots
+
+#### 1. Pivot Longer
+
+```{r}
+fish_ts_pivot <- fish_ts %>% 
+  pivot_longer(cols = c('coho', 'jack_coho', 'steelhead'), 
+               names_to = 'species', 
+               values_to = 'count')
+```
+
+#### 2. Create a Seasonplot.
+
+```{r fig.cap = "Figure 2. Comparison of Coho, Jack Coho, and Steelhead abundance in the Willhamette Fish Passage between 2001-2010. There is apparent seasonality. Coho and Jack Coho are abundant primarily in October, while Steelhead are presesnt between January to August."}
+fish_ts_pivot %>%
+  gg_season(y = count, pal = hcl.colors(n = 9)) +
+  # scale_color_gradient(low="lightgrey",high="darkgreen")+
+  labs(x = "Month",
+       y = "Salmon Counts",
+       title = "Salmon Abundance in the Willhamette Fish Passage",
+       subtitle = "Season Plot from 2001-2010") +
+    theme_minimal()
+```
+* There is apparent seasonality in Coho, Jack Coho, and Steelhead abundance. Coho and Jack Coho are observed in the fish passage in October. Steelhead are abundant from January to August, peaking in June. 
+* Steelhead abundance decreased slightly betweeen 2006-2008. There was a significant increase in Coho abundance in 2009 and 2010. 
+
+
+## Part 3: Annual counts by species
+
+#### 1. Group species abundance by year.
+
+```{r}
+fish_year <- fish_ts_pivot %>% 
+  index_by(year = ~year(.)) %>%
+  group_by(year, species) %>% 
+  summarise(count = sum(count, na.rm = TRUE)) %>% 
+  ungroup()
+```
+
+```{r}
+fish_year$date_integer <- as.integer(as.Date(fish_year$year))
+```
+
+#### 2. Plot salmon abundance from 2001-2010.
+
+```{r fig.cap =  "Figure 3. Comparison of Coho, Jack Coho, and Steelhead total abundance. There is no trend across the ten-year span for Jack Coho, but there is a distinct increase in Coho abundance starting in 2008."}
+fish_year_plot <- ggplot(data = fish_year, aes(x = year, y = count, color = species)) +
+  geom_line() +
+  scale_color_manual(values=c("goldenrod1", "chartreuse2", "darkblue"), labels = c("Coho", "Jack Coho", "Steelhead"),) +
+  labs(x = "Year",
+       y = "Count",
+       title = "Comparison of Coho, Jack Coho, and Steelhead Count",
+       subtitle = "Yearly comparison of salmon species in the Willhamette Fish Passage from 2001-2010") +
+  theme_minimal() +
+  theme(legend.title = element_blank()) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust = 0.1)) +
+  scale_x_continuous(breaks = fish_year$year)
+
+
+plot(fish_year_plot)
+```
+* Jack Coho has no trend, and has remained the lowest abundance throughout the time frame.
+* Coho have trended higher over the 10-year period, having slightly higher abundance than Jack Coho and increasing significanlty between 2008 and 2010.
+* Steelhead abundance has had the most variability, with the highest count in 2002 and 2004, a relative decrease between 2005 and 2009. The observations increased once again in 2010. Steelhead had the highest abundance over the time frame.
